@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>WebAR #2 - Card Tracking Performance Profiling</title>
-  <script type="module" crossorigin src="/assets/index-B__h2mor.js"></script>
+  <script type="module" crossorigin src="/assets/index-CuvMv4i4.js"></script>
   <link rel="stylesheet" crossorigin href="/assets/index-C4BgqE2v.css">
 </head>
 <body>
@@ -81,6 +81,18 @@
       <div class="debug-row">
         <span class="label">VIDEO STATE:</span>
         <span id="status-videostate" class="status-badge status-off">IDLE</span>
+      </div>
+      <div class="debug-row">
+        <span class="label">AR DISTANCE:</span>
+        <span id="status-ardistance" class="status-val">---</span>
+      </div>
+      <div class="debug-row">
+        <span class="label">AUDIO VOLUME:</span>
+        <span id="status-audiovolume" class="status-val text-green">0%</span>
+      </div>
+      <div class="debug-row hidden" id="row-unmute">
+        <span class="label">AUDIO LOCK:</span>
+        <button id="btn-unmute-audio" class="btn-toggle">🔊 UNMUTE AUDIO</button>
       </div>
       <div class="debug-row">
         <span class="label">VIDEO RES:</span>

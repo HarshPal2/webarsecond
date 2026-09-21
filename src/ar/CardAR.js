@@ -22,6 +22,11 @@ export const VIDEO_OFFSET_X = 0;        // Horizontal offset relative to target 
 export const VIDEO_OFFSET_Y = 0;        // Vertical offset relative to target center
 export const VIDEO_OFFSET_Z = 0.01;     // Elevation above card surface to prevent z-fighting
 
+// Spatial Audio Parameters
+export const ENABLE_SPATIAL_AUDIO = true;
+export const MIN_AUDIO_DIST = 0.4;      // Full volume threshold (AR tracking distance)
+export const MAX_AUDIO_DIST = 2.5;      // Silent threshold (AR tracking distance)
+
 // Debug Options
 export const SHOW_ALIGNMENT_DEBUG = false; // Set to true to display Phase 1 green debug plane
 
@@ -59,6 +64,15 @@ export class CardAR {
     this.debugPlaneGeometry = null;
     this.debugPlaneMaterial = null;
     this.debugPlaneMesh = null;
+
+    // Spatial Audio Tracking State
+    this.targetPos = new THREE.Vector3();
+    this.targetVolume = 0;
+    this.currentVolume = 0;
+    this.currentDistance = 0;
+    this.isTargetFound = false;
+    this.lastAudioCalcTime = 0;
+    this.audioLocked = false;
   }
 
   /**
@@ -154,6 +168,29 @@ export class CardAR {
       qualityMode: this.qualityMode,
       pixelRatio: targetRatio.toFixed(2)
     });
+  }
+
+  /**
+   * Attempt to unmute video audio on explicit user interaction
+   */
+  async unmuteAudio() {
+    if (!this.videoElement) return false;
+    try {
+      this.videoElement.muted = false;
+      const playPromise = this.videoElement.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+      }
+      this.audioLocked = false;
+      this.updateStatus({ audioLocked: false, audioMuted: false });
+      console.log('[CardAR] Audio successfully unmuted by user action.');
+      return true;
+    } catch (e) {
+      console.warn('[CardAR] Audio unmute attempt failed:', e);
+      this.audioLocked = true;
+      this.updateStatus({ audioLocked: true, message: 'Unmute failed: ' + e.message });
+      return false;
+    }
   }
 
   /**
@@ -312,6 +349,7 @@ export class CardAR {
     // ---------------------------------------------------------------------
     anchor.onTargetFound = () => {
       console.log(`[CardAR] Target ${targetIndex} Found`);
+      this.isTargetFound = true;
 
       // Show video plane & play from start if enabled
       if (ENABLE_VIDEO && this.videoRoot) {
@@ -320,17 +358,31 @@ export class CardAR {
 
       if (ENABLE_VIDEO && this.videoElement) {
         this.videoElement.currentTime = 0;
+
+        // Try unmuting inside gesture execution chain if audio is supported
+        if (ENABLE_SPATIAL_AUDIO && !this.audioLocked) {
+          this.videoElement.muted = false;
+        }
+
         const playPromise = this.videoElement.play();
         if (playPromise !== undefined) {
           playPromise
             .then(() => {
               this.videoState = 'PLAYING';
-              this.updateStatus({ videoState: 'PLAYING' });
+              this.updateStatus({ videoState: 'PLAYING', audioLocked: false });
             })
             .catch((err) => {
-              console.warn('[CardAR] Video play catch (unlocked gesture check):', err);
+              console.warn('[CardAR] Video play catch (audio playback lock check):', err);
+              // Fallback to muted playback if browser blocked unmuted autoplay
+              if (this.videoElement.muted === false) {
+                this.videoElement.muted = true;
+                this.audioLocked = true;
+                this.videoElement.play().catch((e2) => {
+                  console.error('[CardAR] Muted fallback play error:', e2);
+                });
+              }
               this.videoState = 'PLAY LOCKED';
-              this.updateStatus({ videoState: 'PLAY LOCKED', message: err.message });
+              this.updateStatus({ videoState: 'PLAY LOCKED', audioLocked: true, message: err.message });
             });
         } else {
           this.videoState = 'PLAYING';
@@ -352,6 +404,8 @@ export class CardAR {
 
     anchor.onTargetLost = () => {
       console.log(`[CardAR] Target ${targetIndex} Lost`);
+      this.isTargetFound = false;
+      this.targetVolume = 0; // Target volume decays to 0
 
       // Pause video & hide video plane
       if (ENABLE_VIDEO && this.videoElement) {
@@ -371,7 +425,9 @@ export class CardAR {
       this.updateStatus({
         targetStatus: 'LOST',
         targetIndex: targetIndex,
-        trackingActive: false
+        trackingActive: false,
+        arDistance: '---',
+        audioVolume: '0%'
       });
     };
 
@@ -420,6 +476,35 @@ export class CardAR {
         lastFrameTimestamp = now;
         frameCount++;
 
+        // ---------------------------------------------------------------------
+        // Spatial Audio Calculation & Volume Lerping
+        // ---------------------------------------------------------------------
+        if (ENABLE_SPATIAL_AUDIO && this.videoElement) {
+          // A. Calculate Target Volume at 10-20 Hz (~50-100ms interval)
+          if (this.isTargetFound && this.anchors[0] && this.anchors[0].anchor.group) {
+            if (now - this.lastAudioCalcTime >= 60) {
+              this.lastAudioCalcTime = now;
+              this.anchors[0].anchor.group.getWorldPosition(this.targetPos);
+              this.currentDistance = this.targetPos.length();
+
+              // Smoothstep proximity calculation (MIN_AUDIO_DIST = 1.0 vol, MAX_AUDIO_DIST = 0.0 vol)
+              const t = Math.min(Math.max((MAX_AUDIO_DIST - this.currentDistance) / (MAX_AUDIO_DIST - MIN_AUDIO_DIST), 0), 1);
+              this.targetVolume = t * t * (3 - 2 * t);
+            }
+          } else {
+            this.targetVolume = 0;
+          }
+
+          // B. Per-frame Volume Smooth Lerp
+          this.currentVolume += (this.targetVolume - this.currentVolume) * 0.15;
+          if (Math.abs(this.currentVolume - this.targetVolume) < 0.001) {
+            this.currentVolume = this.targetVolume;
+          }
+
+          // Apply volume to HTML5 video element
+          this.videoElement.volume = this.currentVolume;
+        }
+
         // Render Three.js scene
         this.renderer.render(this.scene, this.camera);
 
@@ -445,7 +530,9 @@ export class CardAR {
             videoState: this.videoState,
             videoRes: this.videoInfo.res,
             videoAspect: this.videoInfo.aspect,
-            videoPlane: this.videoInfo.plane
+            videoPlane: this.videoInfo.plane,
+            arDistance: this.isTargetFound ? this.currentDistance.toFixed(2) : '---',
+            audioVolume: `${Math.round(this.currentVolume * 100)}%`
           });
         }
       });

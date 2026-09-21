@@ -24,6 +24,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusVideoaspect = document.getElementById('status-videoaspect');
   const statusVideoplane = document.getElementById('status-videoplane');
 
+  const statusArdistance = document.getElementById('status-ardistance');
+  const statusAudiovolume = document.getElementById('status-audiovolume');
+  const rowUnmute = document.getElementById('row-unmute');
+  const btnUnmuteAudio = document.getElementById('btn-unmute-audio');
+
   const btnToggleQuality = document.getElementById('btn-toggle-quality');
   const btnToggleTracking = document.getElementById('btn-toggle-tracking');
 
@@ -83,6 +88,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  if (btnUnmuteAudio) {
+    btnUnmuteAudio.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (cardAR) {
+        const success = await cardAR.unmuteAudio();
+        if (success && rowUnmute) {
+          rowUnmute.classList.add('hidden');
+        }
+      }
+    });
+  }
+
   // 3. Status Update Callback
   function updateDebugUI(status) {
     if (status.fps !== undefined && statusFps) {
@@ -117,6 +134,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (status.videoPlane !== undefined && statusVideoplane) {
       statusVideoplane.textContent = status.videoPlane;
+    }
+
+    if (status.arDistance !== undefined && statusArdistance) {
+      statusArdistance.textContent = status.arDistance;
+    }
+    if (status.audioVolume !== undefined && statusAudiovolume) {
+      statusAudiovolume.textContent = status.audioVolume;
+    }
+    if (status.audioLocked !== undefined && rowUnmute) {
+      if (status.audioLocked) {
+        rowUnmute.classList.remove('hidden');
+      } else {
+        rowUnmute.classList.add('hidden');
+      }
     }
 
     if (status.startupStage !== undefined && statusStartup) {
