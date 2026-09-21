@@ -229,6 +229,9 @@ document.addEventListener('DOMContentLoaded', () => {
         onStatusChange: updateDebugUI
       });
 
+      // Synchronously unlock/warmup video audio element inside this user gesture frame
+      cardAR.warmUpAudio();
+
       await cardAR.start();
       
       // Hide start overlay once camera stream & MindAR start successfully

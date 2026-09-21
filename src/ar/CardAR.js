@@ -171,6 +171,42 @@ export class CardAR {
   }
 
   /**
+   * Pre-create and warm up audio on video element during initial user gesture frame
+   */
+  warmUpAudio() {
+    if (!this.videoElement) {
+      const video = document.createElement('video');
+      video.src = VIDEO_PATH;
+      video.loop = true;
+      video.muted = false; // Set muted to false during user gesture
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.preload = 'auto';
+
+      this.videoElement = video;
+    } else {
+      this.videoElement.muted = false;
+    }
+
+    // Try starting audio playback inside direct user click event loop
+    const p = this.videoElement.play();
+    if (p !== undefined) {
+      p.then(() => {
+        // Immediately pause until target is actually tracked
+        this.videoElement.pause();
+        this.audioLocked = false;
+        console.log('[CardAR] Audio successfully unlocked during user gesture warmup.');
+      }).catch((err) => {
+        console.warn('[CardAR] Mobile browser restricted unmuted autoplay during gesture:', err);
+        this.videoElement.muted = true;
+        this.audioLocked = true;
+        this.updateStatus({ audioLocked: true });
+      });
+    }
+  }
+
+  /**
    * Attempt to unmute video audio on explicit user interaction
    */
   async unmuteAudio() {
@@ -236,17 +272,19 @@ export class CardAR {
       anchor.group.add(videoRoot);
       this.videoRoot = videoRoot;
 
-      // Create HTML5 Video element (No crossOrigin for local same-origin asset)
-      const video = document.createElement('video');
-      video.src = VIDEO_PATH;
-      video.loop = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.setAttribute('playsinline', '');
-      video.setAttribute('webkit-playsinline', '');
-      video.preload = 'auto';
+      // Use existing video element if created during warmUpAudio, or create HTML5 Video element
+      const video = this.videoElement || document.createElement('video');
+      if (!this.videoElement) {
+        video.src = VIDEO_PATH;
+        video.loop = true;
+        video.muted = false;
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.preload = 'auto';
+        this.videoElement = video;
+      }
 
-      this.videoElement = video;
       this.videoState = 'LOADING';
       this.updateStatus({ videoState: 'LOADING' });
 
